@@ -5137,3 +5137,68 @@ FIREWALL_POLICIES = [
         },
     }
 ]
+
+# uptime_stats as reported by a UDM Pro Max (Network 10.6.106, firmware 5.1.33).
+# WAN3 is a GRE tunnelled 5G WAN and carries no "monitors" key at all, while a
+# configured but unplugged WAN2 is missing from uptime_stats entirely.
+UDM_PRO_MAX_UPTIME_STATS = {
+    "WAN": {
+        "alerting_monitors": [
+            {
+                "availability": 100.0,
+                "latency_average": 8,
+                "target": "ping.ui.com",
+                "type": "icmp",
+            },
+            {
+                "availability": 100.0,
+                "latency_average": 10,
+                "target": "1.1.1.1",
+                "type": "dns",
+            },
+            {
+                "availability": 100.0,
+                "latency_average": 17,
+                "target": "8.8.8.8",
+                "type": "dns",
+            },
+        ],
+        "availability": 100.0,
+        "latency_average": 15,
+        "monitors": [
+            {
+                "availability": 0.0,
+                "target": "www.microsoft.com",
+                "type": "icmp",
+            },
+            {
+                "availability": 100.0,
+                "latency_average": 8,
+                "target": "google.com",
+                "type": "icmp",
+            },
+            {
+                "availability": 100.0,
+                "latency_average": 9,
+                "target": "1.1.1.1",
+                "type": "icmp",
+            },
+        ],
+        "time_period": 86400,
+        "uptime": 808277,
+    },
+    "WAN3": {
+        "alerting_monitors": [
+            {
+                "availability": 100.0,
+                "latency_average": 28,
+                "target": "ping.ui.com",
+                "type": "icmp",
+            },
+        ],
+        "availability": 99.73679998517036,
+        "latency_average": 24,
+        "time_period": 22745,
+        "uptime": 137062,
+    },
+}
