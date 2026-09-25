@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Generic, final
 
 from ...interfaces.api_handlers import ItemEvent, SubscriptionHandler
 from ...models.api import ApiItemT
-from .models.api import MAX_PAGE_LIMIT
+from .models.api import MAX_PAGE_LIMIT, SiteResourceRequest
 
 if TYPE_CHECKING:
     from .api_client import ApiClient
@@ -104,3 +104,74 @@ class APIHandler(SubscriptionHandler, Generic[ApiItemT]):
     def __iter__(self) -> Iterator[str]:
         """Allow iterate over items."""
         return iter(self._items)
+
+
+class SiteResourceHandler(APIHandler[ApiItemT]):
+    """A collection under `/v1/sites/{site_id}/`, keyed by ID."""
+
+    collection: str
+    obj_id_key = "id"
+
+    def list_request(self, offset: int, limit: int) -> SiteResourceRequest:
+        """Return the list request for one page."""
+        return SiteResourceRequest.create_list(
+            self.api_client.site_id, self.collection, offset, limit
+        )
+
+    async def list_page(
+        self,
+        offset: int = 0,
+        limit: int = 25,
+        filter_value: str | None = None,
+    ) -> list[ApiItemT]:
+        """Return one page without touching the cache."""
+        response = await self.api_client.request(
+            SiteResourceRequest.create_list(
+                self.api_client.site_id, self.collection, offset, limit, filter_value
+            )
+        )
+        return [self.item_cls(raw) for raw in response["data"]]
+
+    async def get_details(self, obj_id: str) -> ApiItemT:
+        """Fetch one item with every field and refresh the cache with it."""
+        response = await self.api_client.request(
+            SiteResourceRequest.create_get(
+                self.api_client.site_id, self.collection, obj_id
+            )
+        )
+        raw = response["data"][0]
+        self.process_item(raw)
+        return self.item_cls(raw)
+
+
+class ConfigurationHandler(SiteResourceHandler[ApiItemT]):
+    """A site collection whose items can be changed and switched on and off.
+
+    The API updates these with PUT, which replaces the whole object, so a
+    change of one field is a read-modify-write: fetch the details, drop the
+    fields the console sets itself, change the field and send it back.
+    """
+
+    read_only_keys: tuple[str, ...] = ("id", "metadata")
+
+    async def update_item(self, obj_id: str, changes: dict[str, Any]) -> ApiItemT:
+        """Change top-level fields of one item, keeping the rest as they are."""
+        details = await self.get_details(obj_id)
+        data = {
+            key: value
+            for key, value in details.raw.items()
+            if key not in self.read_only_keys
+        }
+        data.update(changes)
+        response = await self.api_client.request(
+            SiteResourceRequest.create_put(
+                self.api_client.site_id, self.collection, obj_id, data
+            )
+        )
+        raw = response["data"][0] if response["data"] else {**details.raw, **changes}
+        self.process_item(raw)
+        return self.item_cls(raw)
+
+    async def set_enabled(self, obj_id: str, enabled: bool) -> ApiItemT:
+        """Enable or disable one item."""
+        return await self.update_item(obj_id, {"enabled": enabled})

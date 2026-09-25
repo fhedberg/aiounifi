@@ -15,12 +15,12 @@ are unchanged and still need a local user.
 config = Configuration(session, "10.0.0.1", port=443, api_key="...")
 network = Controller(config).network
 
-info = await network.get_info()          # {"applicationVersion": "10.6.106"}
-await network.assign_site("default")     # short name, display name or UUID
+info = await network.get_info()  # {"applicationVersion": "10.6.106"}
+await network.assign_site("default")  # short name, display name or UUID
 
-await network.devices.update()           # every page, cached by MAC address
+await network.devices.update()  # every page, cached by MAC address
 switch = network.devices["70:a7:41:65:c0:ce"]
-switch = await network.devices.get_details(switch.device_id)   # adds ports and radios
+switch = await network.devices.get_details(switch.device_id)  # adds ports and radios
 stats = await network.devices.get_statistics(switch.device_id)
 await network.devices.power_cycle_port(switch.device_id, port_idx=3)
 await network.devices.restart(switch.device_id)
@@ -29,7 +29,30 @@ await network.clients.update()
 client = await network.clients.get_by_mac("aa:bb:cc:dd:ee:ff")
 await network.clients.authorize_guest_access(client.client_id, time_limit_minutes=60)
 await network.clients.unauthorize_guest_access(client.client_id)
+
+await network.wifi_broadcasts.update()  # SSIDs, cached by UUID
+await network.wifi_broadcasts.set_enabled(ssid_id, False)
+await network.wifi_broadcasts.set_passphrase(ssid_id, "new passphrase")
+png = await network.wifi_broadcasts.generate_qr_code(ssid_id)
+
+await network.networks.set_enabled(network_id, False)
+await network.firewall_zones.update()  # names for the zone IDs in policies
+await network.firewall_policies.set_enabled(policy_id, False)
+await network.firewall_policies.set_logging(policy_id, True)
+await network.acl_rules.set_enabled(rule_id, False)
+await network.dns_policies.set_enabled(dns_policy_id, False)
+
+vouchers = await network.vouchers.generate(
+    "Weekend guests", time_limit_minutes=1440, count=5
+)
+await network.vouchers.delete(vouchers[0].voucher_id)
+await network.vouchers.delete_matching("expired.eq(true)")
 ```
+
+The API changes configuration with PUT, which replaces the whole object.
+`set_enabled` and the other setters therefore fetch the object's details,
+change the one field and send everything back, leaving out the fields the
+console owns (`id`, `metadata`, and `index` for ordered rules).
 
 The v1 API has no websocket. `update()` fetches every page of a list and then
 removes cached items the console no longer returns, signalling `DELETED`, so

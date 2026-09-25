@@ -6,9 +6,15 @@ from typing import TYPE_CHECKING, cast
 
 from ...errors import RequestError
 from .connectivity import Connectivity
+from .interfaces.acl_rules import AclRules
 from .interfaces.clients import Clients
 from .interfaces.devices import Devices
+from .interfaces.dns_policies import DnsPolicies
+from .interfaces.firewall import FirewallPolicies, FirewallZones
+from .interfaces.networks import Networks
 from .interfaces.sites import Sites
+from .interfaces.vouchers import Vouchers
+from .interfaces.wifi_broadcasts import WifiBroadcasts
 from .models.info import InfoData, InfoRequest
 
 if TYPE_CHECKING:
@@ -33,6 +39,13 @@ class ApiClient:
         self.sites = Sites(self)
         self.devices = Devices(self)
         self.clients = Clients(self)
+        self.wifi_broadcasts = WifiBroadcasts(self)
+        self.networks = Networks(self)
+        self.firewall_zones = FirewallZones(self)
+        self.firewall_policies = FirewallPolicies(self)
+        self.acl_rules = AclRules(self)
+        self.dns_policies = DnsPolicies(self)
+        self.vouchers = Vouchers(self)
 
     @property
     def site_id(self) -> str:

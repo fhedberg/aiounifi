@@ -65,7 +65,7 @@ async def network_api(
     session: aiohttp.ClientSession,
     ssl_context: SSLContext | None = None,
 ) -> None:
-    """List sites, devices and clients over the Network API v1."""
+    """List sites, devices, clients and SSIDs over the Network API v1."""
     controller = Controller(
         Configuration(
             session,
@@ -83,7 +83,11 @@ async def network_api(
             info = await network.get_info()
             LOGGER.info("Network application %s", info["applicationVersion"])
             await network.assign_site(site)
-            await asyncio.gather(network.devices.update(), network.clients.update())
+            await asyncio.gather(
+                network.devices.update(),
+                network.clients.update(),
+                network.wifi_broadcasts.update(),
+            )
     except aiounifi.Unauthorized:
         LOGGER.warning("The API key was rejected by %s", host)
         return
@@ -98,6 +102,13 @@ async def network_api(
     for client in network.clients.values():
         LOGGER.info(
             "Client %s %s %s", client.name, client.mac_address, client.ip_address
+        )
+    for broadcast in network.wifi_broadcasts.values():
+        LOGGER.info(
+            "SSID %s %s %s",
+            broadcast.name,
+            broadcast.security_type,
+            "enabled" if broadcast.enabled else "disabled",
         )
 
 

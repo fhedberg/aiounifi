@@ -30,6 +30,12 @@ class ApiResponse(TypedDict):
     totalCount: NotRequired[int]
 
 
+class EntityMetadata(TypedDict):
+    """Who made the object: `USER_DEFINED`, `SYSTEM_DEFINED`, and so on."""
+
+    origin: str
+
+
 class ApiErrorResponse(TypedDict):
     """Error envelope returned with most 4xx and 5xx responses."""
 
@@ -72,6 +78,80 @@ class ApiRequest:
             return ApiResponse(data=[decoded])
 
         raise ResponseError(f"Unexpected Network API response for {self.path}")
+
+
+@dataclass
+class SiteResourceRequest(ApiRequest):
+    """A request on a collection under `/v1/sites/{site_id}/`.
+
+    Most configuration resources share the same five operations, so they
+    share one request type instead of one per resource.
+    """
+
+    @classmethod
+    def create_list(
+        cls,
+        site_id: str,
+        collection: str,
+        offset: int = DEFAULT_PAGE_OFFSET,
+        limit: int = DEFAULT_PAGE_LIMIT,
+        filter_value: str | None = None,
+    ) -> SiteResourceRequest:
+        """List one page of the collection."""
+        return cls(
+            method="get",
+            path=f"/v1/sites/{site_id}/{collection}",
+            params=page_params(offset, limit, filter_value),
+        )
+
+    @classmethod
+    def create_get(
+        cls, site_id: str, collection: str, obj_id: str
+    ) -> SiteResourceRequest:
+        """Get one item."""
+        return cls(method="get", path=f"/v1/sites/{site_id}/{collection}/{obj_id}")
+
+    @classmethod
+    def create_put(
+        cls, site_id: str, collection: str, obj_id: str, data: Mapping[str, Any]
+    ) -> SiteResourceRequest:
+        """Replace one item."""
+        return cls(
+            method="put", path=f"/v1/sites/{site_id}/{collection}/{obj_id}", data=data
+        )
+
+    @classmethod
+    def create_patch(
+        cls, site_id: str, collection: str, obj_id: str, data: Mapping[str, Any]
+    ) -> SiteResourceRequest:
+        """Change some fields of one item."""
+        return cls(
+            method="patch",
+            path=f"/v1/sites/{site_id}/{collection}/{obj_id}",
+            data=data,
+        )
+
+    @classmethod
+    def create_post(
+        cls, site_id: str, collection: str, data: Mapping[str, Any]
+    ) -> SiteResourceRequest:
+        """Create items in the collection."""
+        return cls(method="post", path=f"/v1/sites/{site_id}/{collection}", data=data)
+
+    @classmethod
+    def create_delete(
+        cls,
+        site_id: str,
+        collection: str,
+        obj_id: str | None = None,
+        filter_value: str | None = None,
+    ) -> SiteResourceRequest:
+        """Delete one item, or every item matching a filter."""
+        path = f"/v1/sites/{site_id}/{collection}"
+        if obj_id is not None:
+            path = f"{path}/{obj_id}"
+        params = {"filter": filter_value} if filter_value else None
+        return cls(method="delete", path=path, params=params)
 
 
 def page_params(
