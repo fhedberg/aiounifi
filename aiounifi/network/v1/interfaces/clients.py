@@ -11,6 +11,7 @@ from ..models.client import (
     Client,
     ClientActionRequest,
     ClientActionResponse,
+    ClientData,
     GetClientRequest,
     ListClientsRequest,
     normalize_mac,
@@ -61,6 +62,18 @@ class Clients(APIHandler[Client]):
     def last_seen(self, mac_address: str) -> datetime | None:
         """When an `update` last listed the client, in UTC."""
         return self._last_seen.get(self.normalize_obj_id(mac_address))
+
+    def restore(self, raw: ClientData, last_seen: datetime | None = None) -> str | None:
+        """Put a client seen before this process started into the cache.
+
+        For callers that keep clients across restarts: the console cannot
+        list a client that is not connected, so this is the only way it is
+        known before it connects again. The client counts as disconnected
+        until an `update` lists it. Returns its ID, or `None` without a MAC.
+        """
+        if (obj_id := self.process_item(dict(raw))) is not None and last_seen:
+            self._last_seen[obj_id] = last_seen
+        return obj_id
 
     def forget(self, mac_address: str) -> None:
         """Drop a client from the cache and signal `DELETED`."""

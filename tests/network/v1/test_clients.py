@@ -1,5 +1,7 @@
 """Test the clients interface against captured console responses."""
 
+from datetime import UTC, datetime
+
 from aiounifi.interfaces.api_handlers import ItemEvent
 from aiounifi.network.v1.api_client import ApiClient
 
@@ -244,3 +246,30 @@ async def test_forget(mock_aioresponse, network_client_with_site: ApiClient) -> 
     assert not clients.is_connected("20:f8:3b:03:ec:9c")
     assert clients.last_seen("20:f8:3b:03:ec:9c") is None
     assert events == [(ItemEvent.DELETED, "20:f8:3b:03:ec:9c")]
+
+
+async def test_restore(mock_aioresponse, network_client_with_site: ApiClient) -> None:
+    """A restored client is cached and disconnected until an update lists it."""
+    mock_aioresponse.get(
+        url_pattern(f"/v1/sites/{SITE_ID}/clients"), payload=envelope([GUEST_CLIENT])
+    )
+    clients = network_client_with_site.clients
+    events: list[tuple[ItemEvent, str]] = []
+    clients.subscribe(lambda event, obj_id: events.append((event, obj_id)))
+    seen = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+
+    assert clients.restore(HA_CLIENT, seen) == "20:f8:3b:03:ec:9c"
+    assert clients.restore(VPN_CLIENT) is None, "no MAC, nothing to key on"
+
+    assert clients["20:f8:3b:03:ec:9c"].name == "ha"
+    assert not clients.is_connected("20:f8:3b:03:ec:9c")
+    assert clients.last_seen("20:f8:3b:03:ec:9c") == seen
+    assert events == [(ItemEvent.ADDED, "20:f8:3b:03:ec:9c")]
+
+    await clients.update()
+
+    assert "20:f8:3b:03:ec:9c" in clients, "not listed, still kept"
+    assert not clients.is_connected("20:f8:3b:03:ec:9c")
+    assert clients.last_seen("20:f8:3b:03:ec:9c") == seen
+    assert clients.is_connected(GUEST_CLIENT["macAddress"])
+    assert (ItemEvent.DELETED, "20:f8:3b:03:ec:9c") not in events
