@@ -19,9 +19,9 @@ class APIHandler(SubscriptionHandler, Generic[ApiItemT]):
     """A cache of one resource, kept fresh by polling.
 
     The v1 API has no websocket, so `update` is the only source of change.
-    It walks every page of the list endpoint and then drops any item the
-    console no longer lists, signalling `DELETED` for each, so subscribers
-    see a client leave the way they would over the legacy websocket.
+    It walks every page of the list endpoint and then hands every item the
+    console no longer lists to `item_missing`, which by default drops it and
+    signals `DELETED`.
     """
 
     item_cls: type[ApiItemT]
@@ -59,8 +59,16 @@ class APIHandler(SubscriptionHandler, Generic[ApiItemT]):
                 break
 
         for obj_id in [obj_id for obj_id in self._items if obj_id not in seen]:
-            self._items.pop(obj_id)
-            self.signal_subscribers(ItemEvent.DELETED, obj_id)
+            self.item_missing(obj_id)
+        self.items_listed(seen)
+
+    def items_listed(self, obj_ids: set[str]) -> None:
+        """Handle the IDs listed by a completed `update`."""
+
+    def item_missing(self, obj_id: str) -> None:
+        """Handle an item the console no longer lists: forget it."""
+        self._items.pop(obj_id)
+        self.signal_subscribers(ItemEvent.DELETED, obj_id)
 
     @final
     def process_item(self, raw: dict[str, Any]) -> str | None:

@@ -55,8 +55,11 @@ change the one field and send everything back, leaving out the fields the
 console owns (`id`, `metadata`, and `index` for ordered rules).
 
 The v1 API has no websocket. `update()` fetches every page of a list and then
-removes cached items the console no longer returns, signalling `DELETED`, so
-subscribers see clients come and go the same way as over the legacy websocket.
+removes cached items the console no longer returns, signalling `DELETED`.
+Clients are the exception: the console lists connected clients only, so one
+that leaves stays cached, as in the legacy API, and signals `CHANGED`.
+`network.clients.is_connected(mac)` and `network.clients.last_seen(mac)` tell
+whether and when it was last listed.
 Errors are `NetworkApiError` subclasses that also inherit the legacy types
 (`Unauthorized`, `Forbidden`, ...) and carry the API's structured error fields.
 

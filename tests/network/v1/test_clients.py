@@ -1,5 +1,6 @@
 """Test the clients interface against captured console responses."""
 
+from aiounifi.interfaces.api_handlers import ItemEvent
 from aiounifi.network.v1.api_client import ApiClient
 
 from .conftest import BASE_URL, SITE_ID, envelope, requests_to, url_pattern
@@ -185,3 +186,61 @@ async def test_authorize_guest_access_all_limits(
         call.kwargs["data"]
         == b'{"action":"AUTHORIZE_GUEST_ACCESS","timeLimitMinutes":1,"dataUsageLimitMBytes":2,"rxRateLimitKbps":3,"txRateLimitKbps":4}'
     )
+
+
+async def test_client_that_leaves_is_kept(
+    mock_aioresponse, network_client_with_site: ApiClient
+) -> None:
+    """A client missing from the list stays cached and reads as disconnected."""
+    path = url_pattern(f"/v1/sites/{SITE_ID}/clients")
+    mock_aioresponse.get(path, payload=envelope([HA_CLIENT, GUEST_CLIENT]))
+    mock_aioresponse.get(path, payload=envelope([HA_CLIENT]))
+    mock_aioresponse.get(path, payload=envelope([HA_CLIENT]))
+    mock_aioresponse.get(path, payload=envelope([HA_CLIENT, GUEST_CLIENT]))
+    clients = network_client_with_site.clients
+    events: list[tuple[ItemEvent, str]] = []
+    guest_mac = GUEST_CLIENT["macAddress"]
+
+    await clients.update()
+    first_seen = clients.last_seen(guest_mac)
+    assert clients.is_connected(guest_mac)
+    assert first_seen is not None
+
+    clients.subscribe(
+        lambda event, obj_id: (
+            events.append((event, obj_id)) if obj_id == guest_mac else None
+        )
+    )
+    await clients.update()
+    await clients.update()
+
+    assert guest_mac in clients
+    assert clients[guest_mac].name == "phone"
+    assert not clients.is_connected(guest_mac)
+    assert clients.last_seen(guest_mac) == first_seen
+    assert events == [(ItemEvent.CHANGED, guest_mac)], "signalled once, as it left"
+
+    await clients.update()
+
+    assert clients.is_connected(guest_mac)
+    assert clients.last_seen(guest_mac) > first_seen
+    assert events[-1] == (ItemEvent.CHANGED, guest_mac)
+
+
+async def test_forget(mock_aioresponse, network_client_with_site: ApiClient) -> None:
+    """Forgetting a client drops it and signals DELETED."""
+    mock_aioresponse.get(
+        url_pattern(f"/v1/sites/{SITE_ID}/clients"), payload=envelope([HA_CLIENT])
+    )
+    clients = network_client_with_site.clients
+    await clients.update()
+    events: list[tuple[ItemEvent, str]] = []
+    clients.subscribe(lambda event, obj_id: events.append((event, obj_id)))
+
+    clients.forget("20-F8-3B-03-EC-9C")
+    clients.forget("20:f8:3b:03:ec:9c")
+
+    assert "20:f8:3b:03:ec:9c" not in clients
+    assert not clients.is_connected("20:f8:3b:03:ec:9c")
+    assert clients.last_seen("20:f8:3b:03:ec:9c") is None
+    assert events == [(ItemEvent.DELETED, "20:f8:3b:03:ec:9c")]

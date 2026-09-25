@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from typing import cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
+from ....interfaces.api_handlers import ItemEvent
 from ..api_handlers import APIHandler
 from ..models.client import (
     Client,
@@ -14,9 +16,18 @@ from ..models.client import (
     normalize_mac,
 )
 
+if TYPE_CHECKING:
+    from ..api_client import ApiClient
+
 
 class Clients(APIHandler[Client]):
-    """Clients connected to the active site, keyed by MAC address.
+    """Clients of the active site, keyed by MAC address.
+
+    The console lists connected clients only. A client that disconnects stays
+    in the cache with the data it had when last listed, the way the legacy
+    API keeps clients it has seen; `is_connected` and `last_seen` tell whether
+    and when it was last listed. Subscribers get `CHANGED` when it leaves.
+    `forget` drops one for good.
 
     VPN and Teleport clients have no MAC address, so `update` leaves them out
     of the cache; `list_page` still returns them.
@@ -24,6 +35,40 @@ class Clients(APIHandler[Client]):
 
     item_cls = Client
     obj_id_key = "macAddress"
+
+    def __init__(self, api_client: ApiClient) -> None:
+        """Initialize."""
+        super().__init__(api_client)
+        self._last_seen: dict[str, datetime] = {}
+        self._connected: set[str] = set()
+
+    def item_missing(self, obj_id: str) -> None:
+        """Keep a client that left; tell subscribers once, as it leaves."""
+        if obj_id in self._connected:
+            self.signal_subscribers(ItemEvent.CHANGED, obj_id)
+
+    def items_listed(self, obj_ids: set[str]) -> None:
+        """Record which clients are connected, and when they were seen."""
+        now = datetime.now(UTC)
+        self._connected = set(obj_ids)
+        for obj_id in obj_ids:
+            self._last_seen[obj_id] = now
+
+    def is_connected(self, mac_address: str) -> bool:
+        """Whether the client was listed by the latest `update`."""
+        return self.normalize_obj_id(mac_address) in self._connected
+
+    def last_seen(self, mac_address: str) -> datetime | None:
+        """When an `update` last listed the client, in UTC."""
+        return self._last_seen.get(self.normalize_obj_id(mac_address))
+
+    def forget(self, mac_address: str) -> None:
+        """Drop a client from the cache and signal `DELETED`."""
+        obj_id = self.normalize_obj_id(mac_address)
+        self._last_seen.pop(obj_id, None)
+        self._connected.discard(obj_id)
+        if self._items.pop(obj_id, None) is not None:
+            self.signal_subscribers(ItemEvent.DELETED, obj_id)
 
     def normalize_obj_id(self, obj_id: str) -> str:
         """Canonical MAC address."""
