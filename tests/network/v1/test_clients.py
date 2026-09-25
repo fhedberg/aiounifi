@@ -200,7 +200,7 @@ async def test_client_that_leaves_is_kept(
     mock_aioresponse.get(path, payload=envelope([HA_CLIENT]))
     mock_aioresponse.get(path, payload=envelope([HA_CLIENT, GUEST_CLIENT]))
     clients = network_client_with_site.clients
-    events: list[tuple[ItemEvent, str]] = []
+    events: list[tuple[ItemEvent, str, bool]] = []
     guest_mac = GUEST_CLIENT["macAddress"]
 
     await clients.update()
@@ -208,9 +208,12 @@ async def test_client_that_leaves_is_kept(
     assert clients.is_connected(guest_mac)
     assert first_seen is not None
 
+    # Each event records what `is_connected` said inside the callback
     clients.subscribe(
         lambda event, obj_id: (
-            events.append((event, obj_id)) if obj_id == guest_mac else None
+            events.append((event, obj_id, clients.is_connected(obj_id)))
+            if obj_id == guest_mac
+            else None
         )
     )
     await clients.update()
@@ -220,13 +223,15 @@ async def test_client_that_leaves_is_kept(
     assert clients[guest_mac].name == "phone"
     assert not clients.is_connected(guest_mac)
     assert clients.last_seen(guest_mac) == first_seen
-    assert events == [(ItemEvent.CHANGED, guest_mac)], "signalled once, as it left"
+    assert events == [(ItemEvent.CHANGED, guest_mac, False)], (
+        "signalled once, as it left, and already disconnected then"
+    )
 
     await clients.update()
 
     assert clients.is_connected(guest_mac)
     assert clients.last_seen(guest_mac) > first_seen
-    assert events[-1] == (ItemEvent.CHANGED, guest_mac)
+    assert events[-1] == (ItemEvent.CHANGED, guest_mac, True)
 
 
 async def test_forget(mock_aioresponse, network_client_with_site: ApiClient) -> None:

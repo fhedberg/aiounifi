@@ -44,16 +44,22 @@ class Clients(APIHandler[Client]):
         self._connected: set[str] = set()
 
     def item_missing(self, obj_id: str) -> None:
-        """Keep a client that left; tell subscribers once, as it leaves."""
-        if obj_id in self._connected:
-            self.signal_subscribers(ItemEvent.CHANGED, obj_id)
+        """Keep a client that left; `items_listed` tells subscribers."""
 
     def items_listed(self, obj_ids: set[str]) -> None:
-        """Record which clients are connected, and when they were seen."""
+        """Record which clients are connected, and when they were seen.
+
+        Runs before the listed clients are stored and signalled, so a
+        subscriber sees `is_connected` as it now is in every callback. A
+        client that has dropped off the list is signalled once, from here.
+        """
         now = datetime.now(UTC)
+        left = self._connected - obj_ids
         self._connected = set(obj_ids)
         for obj_id in obj_ids:
             self._last_seen[obj_id] = now
+        for obj_id in left:
+            self.signal_subscribers(ItemEvent.CHANGED, obj_id)
 
     def is_connected(self, mac_address: str) -> bool:
         """Whether the client was listed by the latest `update`."""

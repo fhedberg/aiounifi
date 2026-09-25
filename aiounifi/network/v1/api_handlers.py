@@ -45,25 +45,30 @@ class APIHandler(SubscriptionHandler, Generic[ApiItemT]):
     async def update(self) -> None:
         """Fetch every page and reconcile the cache with it."""
         offset = 0
-        seen: set[str] = set()
+        listed: list[dict[str, Any]] = []
         while True:
             response = await self.api_client.request(
                 self.list_request(offset, MAX_PAGE_LIMIT)
             )
             page = response["data"]
-            for raw in page:
-                if (obj_id := self.process_item(raw)) is not None:
-                    seen.add(obj_id)
+            listed.extend(page)
             offset += len(page)
             if not page or offset >= response.get("totalCount", 0):
                 break
 
+        seen = {obj_id for raw in listed if (obj_id := self._obj_id(raw)) is not None}
+        self.items_listed(seen)
+        for raw in listed:
+            self.process_item(raw)
         for obj_id in [obj_id for obj_id in self._items if obj_id not in seen]:
             self.item_missing(obj_id)
-        self.items_listed(seen)
 
     def items_listed(self, obj_ids: set[str]) -> None:
-        """Handle the IDs listed by a completed `update`."""
+        """Handle the IDs a completed `update` listed.
+
+        Called before any item is stored or signalled, so what a subclass
+        records here is in place when subscribers hear of the changes.
+        """
 
     def item_missing(self, obj_id: str) -> None:
         """Handle an item the console no longer lists: forget it."""
@@ -71,11 +76,17 @@ class APIHandler(SubscriptionHandler, Generic[ApiItemT]):
         self.signal_subscribers(ItemEvent.DELETED, obj_id)
 
     @final
-    def process_item(self, raw: dict[str, Any]) -> str | None:
-        """Store one item and tell subscribers. Returns its ID."""
+    def _obj_id(self, raw: dict[str, Any]) -> str | None:
+        """Return the ID of one raw item, or `None` if it has none."""
         if self.obj_id_key not in raw:
             return None
-        obj_id = self.normalize_obj_id(raw[self.obj_id_key])
+        return self.normalize_obj_id(raw[self.obj_id_key])
+
+    @final
+    def process_item(self, raw: dict[str, Any]) -> str | None:
+        """Store one item and tell subscribers. Returns its ID."""
+        if (obj_id := self._obj_id(raw)) is None:
+            return None
         obj_is_known = obj_id in self._items
         self._items[obj_id] = self.item_cls(raw)
         self.signal_subscribers(
